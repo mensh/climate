@@ -1,0 +1,1933 @@
+blueprint:
+  name: Climate Control
+  description: >
+    ## ❄️ Chill Your Room Out! ❄️
+
+    ![icon](https://developer.lametric.com/content/apps/icon_thumbs/55645_icon_thumb.gif?v=1)
+
+    _Forget about thy air conditioner remote!_
+
+
+    **Version: 1.0**
+
+
+    ### Features
+
+    - Turn on the climate device when room temperature exceeds your threshold
+
+    - Turn it off when the room chills out as you like it.
+
+    - Dynamically adjust target root temperature (and threshold) based on outdoor conditions!
+
+    - Pause it when window opens, resume after it closes
+
+    - Pause it when nobody's in the room, resume when anyone's back
+
+    - Run when your Photovoltaic system produced enough energy!
+
+    - Temporarily pause automation by manually turning off your Climate Device (e.g. via remote) after it automatically started
+
+    - Get notified all about it over your Awtrix device or through notification group and Telegram
+
+    - Utilize Telegram buttons to control your automation
+
+
+    ### Requirements
+
+    This automation requires the following two **helpers** to be created before using it:
+
+    - **Text Helper**
+      - This helper will store the state of the climate device and some of the automation data (in JSON format).
+      - Create this helper as follows: 
+        - `Settings -> Devices & services -> Helpers -> Create Helper -> Text -> Set maximum length to 1000 characters`
+
+    - **Timer Helper** 
+      - This helper will be used to temporarily pause the automation.
+      - Create this helper as follows: 
+        - `Settings -> Devices & services -> Helpers -> Create Helper -> Timer -> Set duration to 00:30:00 and check Restore? checkbox`
+
+
+    ### Notifications
+
+    This automation can notify you about the changes in the climate device state. Two notification services are supported:
+
+    1. Ordinary `notify.<group>` service that will send notifications to the specified group, mobile devices
+
+    2. Telegram `telegram_bot.send_message` service that will send notifications to your Telegram bot. 
+      - Telegram notifications will contain buttons to control the automation
+
+    Additionally, this automation supports **Awtrix** notifications. 
+    
+    If you have an Awtrix device, you can use it to notify you about the changes in the climate device state too!
+
+
+    ### Remarks
+
+    This automation was only tested with _Panasonic Etherea_ air conditioning units. 
+    This means some of the settings (_HVAC Mode_, _Swing_, _Fan Mode_, _Preset Mode_) might not apply to your device. 
+    
+
+    If that's the case, please leave them as _Unset_ to prevent automation errors.
+
+
+    ![flag](https://developer.lametric.com/content/apps/icon_thumbs/9912_icon_thumb.png?v=1) 
+
+    _From Poland with Love_
+
+
+    Required = *
+  domain: automation
+  input:
+    requirements:
+      name: Requirements *
+      icon: mdi:air-conditioner
+      collapsed: true
+      input:
+        climate_device:
+          name: Climate device to control *
+          description: Climate device to control
+          selector:
+            entity:
+              filter:
+              - domain:
+                - climate
+        temperature_sensor:
+          name: Room Temperature sensor *
+          description: 'Sensor that provides temperature data for this room.
+
+
+            If you have more than one temperature sensor for this room, consider creating _Combine the state of several sensors_ helper that would average the temperature from all of them.'
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+        text_helper:
+          name: Input Text Helper to store climate state *
+          description: 'Specify here a Input Text helper that will be used to store climate device state.
+
+
+            In certain cases, it is required to store the state of the climate device to be able to resume it later on.
+
+
+            To create this helper go to:
+
+
+            `Settings -> Devices & services -> Helpers -> Create Helper -> Text -> Set maximum length to 1000 characters`' 
+          selector:
+            entity:
+              filter:
+              - domain:
+                - input_text
+        timer_helper:
+          name: Timer Helper to temporarily pause automation *
+          description: 'Required timer helper that is used by the automation to pause itself for a certain amount of time.
+
+
+            This timer is used in two cases:
+
+
+            1) When this automation started climate device but you manually turned it off through remote, this timer will be used to prevent automation from turning it back on immediately.
+
+
+            2) When you specify "telegram" in notification group parameter below, Telegram messages will come with "Turn off" button leveraging this timer.cancel
+
+
+            To create this helper go to: 
+
+
+            `Settings -> Devices & services -> Helpers -> Create Helper -> Timer`'
+          selector:
+            entity:
+              filter:
+              - domain:
+                - timer
+    temperatures:
+      name: Temperature Settings
+      icon: mdi:thermometer-auto
+      collapsed: true
+      input:
+        target_temperature:
+          name: Target temperature
+          description: 'Comfortable Temperature you want to have. 
+
+
+            When this temperature is exceeded in your room will turn OFF the climate device.
+
+
+            In case you want to heat up the room instead of cooling it, this temperature will be set on the device to reach during heating. 
+
+
+            Heat Mode is denoted by either setting _Target Temperature_ higher than _Threashold Temperature_ or by setting HVAC Mode to `Heat`.'
+          default: 24
+          selector:
+            number:
+              min: 12.0
+              max: 30.0
+              unit_of_measurement: '°C'
+              mode: slider
+              step: 0.1
+        threshold_temperature:
+          name: Threshold temperature
+          description: 'Uncomfortable temperature you want to turn on Air conditioner.
+
+
+            When this temperature is exceeded in your room, will turn ON the climate device.
+
+
+            In Heating Mode, this temperature will act as a trigger to start heating your room.'
+          default: 25.5
+          selector:
+            number:
+              min: 10.0
+              max: 30.0
+              unit_of_measurement: '°C'
+              mode: slider
+              step: 0.1
+    temperature_timers:
+      name: Temperature Timers (THESE DO NOT WORK YET)
+      icon: mdi:av-timer
+      collapsed: true
+      input:
+        target_temperature_duration:
+          name: "Target temperature reached delay (minutes)"
+          description: 'How long climate should keep on running after reaching target temperature.
+
+
+            If you want the Climate device to keep/maintain target temperature after reached, set this value to the highest number.'
+          default: 15
+          selector:
+            number:
+              min: 0
+              max: 720.0
+              step: 0.5
+              unit_of_measurement: minutes
+              mode: slider
+        threshold_temperature_duration:
+          name: "Threshold temperature reached delay (minutes)"
+          description: 'How long to wait after exceeding threshold temperature before turning ON climate device.'
+          default: 10
+          selector:
+            number:
+              min: 0
+              max: 60.0
+              step: 0.1
+              unit_of_measurement: minutes
+              mode: slider
+    temp_adjust:
+      name: Dynamic Target Temperature Adjustment
+      icon: mdi:thermometer-chevron-up
+      collapsed: true
+      input:
+        use_temp_adjust:
+          name: Dynamic Target Temperature Adjustment.
+          description: 'This option is used to dynamically adjust your interior room target temperature based on outdoor temperature.
+
+
+            When set, will compute target room temperature as follows: 
+
+
+            `TargetTemp := OutdoorTemp - TempSpread` 
+
+
+            where:
+
+
+            - `TempSpread` is a value defined below.
+
+
+            If `(OutdoorTemp - TempSpread) < TargetTemp` - will set target temperature to the value set above.'
+          default: temp_adjust_disabled
+          selector:
+            select:
+              options:
+              - label: Use target temperature adjustment
+                value: temp_adjust_enabled
+              - label: Don't use target temperature adjustment
+                value: temp_adjust_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        outdoor_temperature_sensor:
+          name: Outdoor temperature sensor
+          description: If target temperature adjustment is enabled, this sensor will be used to determine outdoor temperature.
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+        temperature_spread:
+          name: Temperature Spread
+          description: 'If target temperature adjustment is enabled, this value will be substracted from Outdoor temperature to compute desired target room temperature. 
+
+
+          Temperature Spread value is used in following formula: `TargetTemp := OutdoorTemp - TempSpread`'
+          default: 7.0
+          selector:
+            number:
+              min: 0.5
+              max: 10.0
+              unit_of_measurement: '°C'
+              mode: slider
+              step: 0.1
+    manual_override:
+      name: Manual Override
+      icon: mdi:toggle-switch
+      collapsed: true
+      input:
+        manual_turn_off_duration:
+          name: "Manual turn off override duration (minutes)"
+          description: 'When you manually turn off the climate device, this automation will pause itself for this amount of time before turning it back on.'
+          default: 180
+          selector:
+            number:
+              min: 30
+              max: 720.0
+              step: 15
+              unit_of_measurement: minutes
+              mode: slider
+    room_conditions:
+      name: Presence Conditions
+      icon: mdi:motion-sensor
+      collapsed: true
+      input:
+        use_room_presence:
+          name: Activate only when somebody's in the room
+          description: 'When enabled, air conditioner will only be activated given there is somebody in the room. 
+
+
+            When disabled, will let airco run regardless of presence.'
+          default: room_presence_disabled
+          selector:
+            select:
+              options:
+              - label: Use room presence
+                value: room_presence_enabled
+              - label: Don't use room presence
+                value: room_presence_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        room_presence_sensor:
+          name: Room presence sensor
+          description: Operate the climate device only if there's somebody in this room
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+                - binary_sensor
+                - input_boolean
+                - group
+        presence_turn_on_duration:
+          name: "Room Presence turn ON delay (minutes)"
+          description: Turn on climate device only if there is somebody in the room for this number of minutes.
+          default: 5
+          selector:
+            number:
+              min: 0.5
+              max: 120.0
+              step: 0.5
+              unit_of_measurement: minutes
+              mode: slider
+        presence_turn_off_duration:
+          name: "Room Presence turn OFF delay (minutes)"
+          description: Turn off climate device if there is nobody in the room for this number of minutes.
+          default: 15
+          selector:
+            number:
+              min: 0.5
+              max: 180.0
+              step: 0.5
+              unit_of_measurement: minutes
+              mode: slider
+        home_presence_sensor:
+          name: Global Presence sensor
+          description: Tells whether somebody is at home and thus climate can be controlled.
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+                - binary_sensor
+                - group
+    time_conditions:
+      name: Time Conditions
+      icon: mdi:clock-time-eight
+      collapsed: true
+      input:
+        use_time:
+          name: Operate only within time range.
+          description: 'This option is used to add a condition that only allows the automation
+            to run between the start time and end time settings on the selected weekdays.
+
+
+            These time settings are global conditions that can work alongside other options.
+
+
+            Time condition only influences both turn ON and turn OFF actions. 
+
+
+            It means that automation will be unable to turn OFF your climate device when not within time window.'
+          default: time_disabled
+          selector:
+            select:
+              options:
+              - label: Use time options
+                value: time_enabled
+              - label: Don't use time options
+                value: time_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        after_time:
+          name: Start Time
+          description: Set the start time.
+          default: '09:00:00'
+          selector:
+            time: {}
+        before_time:
+          name: End Time
+          description: Set the end time.
+          default: '20:00:00'
+          selector:
+            time: {}
+        weekday_options:
+          name: Weekdays
+          description: 'Select the days of the week you would like the automation to run.
+
+            You must select "_Run only during defined time window_" above for the weekday selections to work.'
+          default:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+          - sat
+          - sun
+          selector:
+            select:
+              multiple: true
+              mode: list
+              options:
+              - label: Monday
+                value: mon
+              - label: Tuesday
+                value: tue
+              - label: Wednesday
+                value: wed
+              - label: Thursday
+                value: thu
+              - label: Friday
+                value: fri
+              - label: Saturday
+                value: sat
+              - label: Sunday
+                value: sun
+              sort: false
+              custom_value: false
+    season_conditions:
+      name: Season Conditions
+      icon: mdi:calendar
+      collapsed: true
+      input:
+        use_season:
+          name: Activate only during specific seasons
+          description: 'When enabled, air conditioner will only run during your defined seasons.
+
+
+            When disabled, will let airco run depending on other options.'
+          default: season_disabled
+          selector:
+            select:
+              options:
+              - label: Use season options
+                value: season_enabled
+              - label: Don't use season options
+                value: season_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        season_sensor:
+          name: Season sensor
+          description: 'Specifies season sensor. 
+
+
+            Setup one in: 
+
+
+            `Settings -> Devices -> Integrations -> Add Integration -> Season`'
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+        seasons_selected:
+          name: "Season when to operate the climate device"
+          description: 'Turn on the climate device during these seasons'
+          default:
+          - spring
+          - summer
+          - autumn
+          selector:
+            select:
+              multiple: true
+              mode: list
+              options:
+              - label: Spring
+                value: spring
+              - label: Summer
+                value: summer
+              - label: Autumn
+                value: autumn
+              - label: Winter
+                value: winter
+              sort: false
+              custom_value: false
+    other_conditions:
+      name: Other Conditions
+      icon: mdi:beaker-question
+      collapsed: true
+      input:
+        global_condition:
+          name: Global Turn ON Condition
+          description: 'Specifies a sensor that when turned ON, will let this automation control climate device.
+
+
+            When the sensor is OFF, automation WILL NEITHER turn ON nor OFF your climate device.'
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+                - binary_sensor
+                - input_boolean
+                - group
+              multiple: true
+        window_opened_sensor:
+          name: Window opened sensor
+          description: 'Tells whether windows/doors in this room are opened. 
+
+
+            If opened, will pause the climate device.'
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+                - binary_sensor
+                - input_boolean
+                - group
+        window_opened_duration:
+          name: "Window opened duration (minutes)"
+          description: 'After window becomes opened, will wait this amount of time before turning climate device OFF. 
+
+
+            Equally, after closing window will wait this time to turn it back ON. 
+
+
+            Default: 1 minute'
+          default: 1
+          selector:
+            number:
+              min: 0.1
+              max: 30.0
+              step: 0.1
+              unit_of_measurement: minutes
+              mode: slider
+        use_humidity:
+          name: Activate only when humidity is alright
+          description: 'When enabled, air conditioner will only run given there is satisfying level of humidity in the room.
+
+
+            When room humidity drops below configured level, the climate device will be turned off.
+
+
+            When disabled, will let airco run regardless of room humidity.'
+          default: humidity_disabled
+          selector:
+            select:
+              options:
+              - label: Use room humidity
+                value: humidity_enabled
+              - label: Don't use room humidity
+                value: humidity_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        humidity_sensor:
+          name: Room humidity sensor
+          description: Specifies room humidity sensor
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+        humidity:
+          name: "Minimum humidity level (%)"
+          description: Turn off climate device if humidity in the room drops below this level.
+          default: 40
+          selector:
+            number:
+              min: 25
+              max: 70.0
+              step: 1
+              unit_of_measurement: '%'
+              mode: slider
+        use_energy_generated_sensor:
+          name: Turn On When PV Generated Energy
+          description: 'Operate climate device only when there is enough energy generated today.
+
+
+            Beware that when this is set, your Climate device will not be operated throughout the night as there will be no sun energy collected then.'
+          default: energy_disabled
+          selector:
+            select:
+              options:
+              - label: Use energy sensor
+                value: energy_enabled
+              - label: Don't use energy sensor
+                value: energy_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        energy_generated_sensor:
+          name: Energy Generated Sensor
+          description: 'This option specifies energy generation sensor. 
+
+
+            If enough energy was generated, climate device will be operated.'
+          default: []
+          selector:
+            entity:
+              filter:
+              - domain:
+                - sensor
+        energy_generated_threshold:
+          name: Energy generated threshold
+          description: Define how much of energy generated today we need to turn on air conditioner.
+          default: 8
+          selector:
+            number:
+              min: 0.0
+              max: 50.0
+              unit_of_measurement: 'kWh'
+              mode: slider
+              step: 1.0
+    climate_settings:
+      name: Climate device Settings
+      icon: mdi:air-filter
+      collapsed: true
+      input:
+        hvac_mode:
+          name: HVAC mode
+          description: 'HVAC mode.'
+          default: cool
+          selector:
+            select:
+              options:
+              - label: Cool
+                value: cool
+              - label: Heat
+                value: heat
+              - label: Heat / Cool
+                value: heat_cool
+              - label: Dry
+                value: dry
+              - label: Fan Only
+                value: fan_only
+              sort: false
+              custom_value: false
+              multiple: false
+        fan_mode:
+          name: Fan mode
+          description: 'Fan mode. 
+
+
+            Leave _unset_ if unsure whether your device support any of these modes.'
+          default: unset
+          selector:
+            select:
+              options:
+              - label: Unset
+                value: unset
+              - label: Auto
+                value: Auto
+              - label: Low
+                value: Low
+              - label: LowMid
+                value: LowMid
+              - label: Mid
+                value: Mid
+              - label: HighMid
+                value: HighMid
+              - label: High
+                value: High
+              sort: false
+              custom_value: false
+              multiple: false
+        swing_mode:
+          name: Swing mode
+          description: 'Swing mode. 
+
+
+            Leave _unset_ if unsure whether your device support any of these modes.'
+          default: unset
+          selector:
+            select:
+              options:
+              - label: Unset
+                value: unset
+              - label: Auto
+                value: Auto
+              - label: Up
+                value: Up
+              - label: UpMid
+                value: UpMid
+              - label: Mid
+                value: Mid
+              - label: DownMid
+                value: DownMid
+              - label: Down
+                value: Down
+              - label: All
+                value: All
+              sort: false
+              custom_value: false
+              multiple: false
+        preset_mode:
+          name: Preset mode
+          description: 'Preset mode. 
+
+
+            Leave _unset_ if unsure whether your device support any of these modes. 
+
+
+            If there is no preset mode of your preference on the list, you can type one here yourself and it will be directly used by the script.'
+          default: unset
+          selector:
+            select:
+              options:
+              - label: Unset
+                value: unset
+              - label: Normal mode
+                value: none
+              - label: Quiet
+                value: quiet
+              - label: Powerful mode
+                value: boost
+              - label: Eco
+                value: eco
+              sort: false
+              custom_value: true
+              multiple: false
+    notifications:
+      name: Notifications
+      icon: mdi:bell
+      collapsed: true
+      input:
+        use_notify:
+          name: Notify about climate changes
+          description: Notify group defined below about climate changes
+          default: notify_disabled
+          selector:
+            select:
+              options:
+              - label: Notify
+                value: notify_enabled
+              - label: Don't notify
+                value: notify_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        notify:
+          name: Notification group
+          description: 'Select whom to notify. 
+
+
+            This value will be used to invoke notify service, like so: `notify.<this_value>` 
+
+
+            E.g. if value supplied is "notify", will invoke this service: `notify.notify`
+
+
+            If you have Telegram integration, you can use it here as well: `notify.telegram`'
+          default: notify
+          selector:
+            text:
+              multiline: false
+        telegram_chat_ids:
+          name: Telegram Target Chat IDs
+          description: 'In case your notification group setting contained word "telegram", notification will be sent through your Telegram Bot. 
+
+
+            This parameter specifies chat identifiers where Telegram Bot should deliver the message into.
+
+
+            Here you provide a comma-separated list of pre-authorized chat_ids or user_ids to send the notification to. 
+            
+            
+            Defaults to the first allowed chat_id'
+          default: ""
+          selector:
+            text:
+              multiline: false
+        use_awtrix:
+          name: Display Awtrix notification
+          description: 'Use Awtrix to notify about climate changes. 
+          
+
+          Will present a 30 seconds notification whenever turning ON and OFF your Climate device.'
+          default: awtrix_disabled
+          selector:
+            select:
+              options:
+              - label: Notify AWTRIX
+                value: awtrix_enabled
+              - label: Don't use AWTRIX notifications
+                value: awtrix_disabled
+              custom_value: false
+              sort: false
+              multiple: false
+        awtrix_light:
+          name: AWTRIX Device to notify
+          description: 'Select the Awtrix device(s) you want to notify.
+
+
+            Make sure to have [**55645**](https://developer.lametric.com/content/apps/icon_thumbs/55645_icon_thumb.gif?v=1) icon installed. 
+
+
+            Install the icon like this:
+
+
+            `Go to your AWTRIX Web interface -> Icons -> Icon ID 55645 -> Download`'
+          default: []
+          selector:
+            device:
+              integration: mqtt
+              manufacturer: Blueforcer
+              multiple: true
+variables:
+  climate_device: !input climate_device
+  device_state: "{{ states(climate_device) }}"
+  text_helper: !input text_helper
+  text_helper_state: "{{ states(text_helper) }}"
+  helper_json: "{{ (text_helper_state | from_json) if text_helper_state|length > 6 and text_helper_state|lower != 'unknown' else {} }}"
+  device_name: "{{ state_attr(climate_device, 'friendly_name') }}"
+  device_id: "{{ climate_device.split('.')[1] }}"
+  target_temperature: !input target_temperature
+  target_temperature_duration: !input target_temperature_duration
+  threshold_temperature: !input threshold_temperature
+  threshold_temperature_duration: !input threshold_temperature_duration
+  temperature_sensor: !input temperature_sensor
+  use_temp_adjust: !input use_temp_adjust
+  outdoor_temperature_sensor: !input outdoor_temperature_sensor
+  timer_helper: !input timer_helper
+  manual_turn_off_duration: !input manual_turn_off_duration
+  temperature_spread: !input temperature_spread
+  window_opened_sensor: !input window_opened_sensor
+  home_presence_sensor: !input home_presence_sensor
+  global_condition: !input global_condition
+  use_energy_generated_sensor: !input use_energy_generated_sensor
+  energy_generated_sensor: !input energy_generated_sensor
+  energy_generated_threshold: !input energy_generated_threshold
+  window_opened_duration: !input window_opened_duration
+  room_presence_sensor: !input room_presence_sensor
+  presence_turn_on_duration: !input presence_turn_on_duration
+  presence_turn_off_duration: !input presence_turn_off_duration
+  hvac_mode: !input hvac_mode
+  fan_mode: !input fan_mode
+  swing_mode: !input swing_mode
+  preset_mode: !input preset_mode
+  awtrix_devices: !input awtrix_light
+  use_awtrix: !input use_awtrix
+  use_season: !input use_season
+  season_sensor: !input season_sensor
+  seasons_selected: !input seasons_selected
+  use_room_presence: !input use_room_presence
+  use_notify: !input use_notify
+  _notify: !input notify
+  notify: "{{ _notify | replace('notify.', '') }}"
+  telegram_chat_ids: !input telegram_chat_ids
+  use_time: !input use_time
+  after_time: !input after_time
+  before_time: !input before_time
+  weekday_options: !input weekday_options
+  use_humidity: !input use_humidity
+  humidity: !input humidity
+  humidity_sensor: !input humidity_sensor
+  heat_mode: >- 
+    {{ (target_temperature > threshold_temperature) or ('heat' in hvac_mode|lower) }}
+  temperature_sensor_name: >-
+    {% set val = temperature_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  outdoor_temperature_sensor_name: >-
+    {% set val = outdoor_temperature_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  timer_helper_name: >-
+    {% set val = timer_helper %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  timer_name: "{{ timer_helper_name }}"
+  window_opened_sensor_name: >-
+    {% set val = window_opened_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  energy_generated_sensor_name: >-
+    {% set val = energy_generated_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  home_presence_sensor_name: >-
+    {% set val = home_presence_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  room_presence_sensor_name: >-
+    {% set val = room_presence_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  humidity_sensor_name: >-
+    {% set val = humidity_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  season_sensor_name: >-
+    {% set val = season_sensor %}
+    {% if val is list %}
+      {% if val | length > 0 %}
+        {{ val[0] }}
+      {% endif %}
+    {% else %}
+      {{ val }}
+    {% endif %}
+  state_temperature_sensor: "{{ states(temperature_sensor_name) | float(0) }}"
+  state_outdoor_temperature_sensor: >-
+    {% set name1 = outdoor_temperature_sensor_name %}
+    {% if name1 is defined and name1 | length > 2 %} 
+      {{ states(name1) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  state_window_opened_sensor: >-
+    {% set name2 = window_opened_sensor_name %}
+    {% if name2 is defined and name2 | length > 2 %} 
+      {{ states(name2) | lower }}
+    {% else %}
+      off
+    {% endif %}
+  state_energy_generated_sensor: >-
+    {% set name3 = energy_generated_sensor_name %}
+    {% if name3 is defined and name3 | length > 2 %} 
+      {{ states(name3) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  state_humidity_sensor: >-
+    {% set name4 = humidity_sensor_name %}
+    {% if name4 is defined and name4 | length > 2 %} 
+      {{ states(name4) | float(0) }}
+    {% else %}
+      0
+    {% endif %}
+  state_home_presence_sensor: >-
+    {% set name5 = home_presence_sensor_name %}
+    {% if name5 is defined and name5 | length > 2 %} 
+      {{ states(name5) | lower }}
+    {% else %}
+      on
+    {% endif %}
+  state_season_sensor: >-
+    {% set name6 = season_sensor_name %}
+    {% if name6 is defined and name6 | length > 2 %} 
+      {{ states(name6) | lower }}
+    {% else %}
+      unknown
+    {% endif %}
+  state_room_presence_sensor: >-
+    {% set name7 = room_presence_sensor_name %}
+    {% if name7 is defined and name7 | length > 2 %} 
+      {{ states(name7) | lower }}
+    {% else %}
+      unknown
+    {% endif %}
+  state_global_condition: >-
+    {% set name8 = global_condition[0] if global_condition is list else global_condition %}
+    {% if name8 is defined and name8 | length > 2 %}
+      {{ states(name8) | lower }}
+    {% else %}
+      unknown
+    {% endif %}
+  timer_turn_on: "/climate_turn_on_{{ device_id }}"
+  timer_turn_off: "/climate_turn_off_{{ device_id }}"
+  timer_turn_off_30m: "/climate_turn_off_{{ device_id }}_30m"
+  timer_turn_off_2h: "/climate_turn_off_{{ device_id }}_2h"
+  timer_turn_off_4h: "/climate_turn_off_{{ device_id }}_4h"
+  timer_turn_off_midnight: "/climate_turn_off_{{ device_id }}_midnight"
+  _telegram_chat_ids: >-
+    {% set n = namespace(dict=[]) %}
+    {% for id in telegram_chat_ids %}
+      {% if id | int(0) > 0 %}
+        {% set n.dict = n.dict + [id | int(0), ] %}
+      {% endif %}
+    {% endfor %}
+    {{ n.dict }}
+  message_topics: >-
+    {%- macro get_device_topic(device_id) %} 
+      {{ states((device_entities(device_id) | select('search','device_topic') | list)[0]) | trim }} 
+    {%- endmacro %}
+    {%- set ns = namespace(devices=[]) %}
+    {%- for device_id in awtrix_devices %}
+      {%- set device=get_device_topic(device_id)|replace('','')|trim %}
+      {% set ns.devices = ns.devices + [ device|trim ~ '/notify' ] %}
+    {%- endfor %}
+    {{ ns.devices | reject('match','unavailable') | list}}
+  _computed_target_temperature: >-
+    {% if use_temp_adjust == 'temp_adjust_enabled' %}
+      {% set target_temp = state_outdoor_temperature_sensor - temperature_spread %}
+      {% if target_temp < target_temperature %}
+        {{ target_temperature }}
+      {% else %}
+        {{ target_temp }}
+      {% endif %}
+    {% else %}
+      {{ target_temperature }}
+    {% endif %}
+  _computed_threshold_temperature: >-
+    {% if use_temp_adjust == 'temp_adjust_enabled' %}
+      {{ _computed_target_temperature + (threshold_temperature - target_temperature) }}
+    {% else %}
+      {{ threshold_temperature }}
+    {% endif %}
+  _room_presence_last_changed: >-
+    {% if room_presence_sensor_name is defined and room_presence_sensor_name | length > 0 %}
+      {{ (now() - states[room_presence_sensor_name].last_changed).seconds }}
+    {% else %}
+      0
+    {% endif %}
+  _temperature_last_changed: "{{ (now() - states[temperature_sensor_name].last_changed).seconds }}"
+  _cond_1_presence: "{{ ((use_room_presence == 'room_presence_disabled') or (use_room_presence == 'room_presence_enabled' and state_room_presence_sensor == 'on')) and (state_home_presence_sensor == 'on') }}"
+  _cond_1_presence_turn_on: "{{ ((use_room_presence == 'room_presence_disabled') or (_cond_1_presence == true and _room_presence_last_changed >= presence_turn_on_duration * 60)) }}"
+  _cond_1_presence_turn_off: "{{ ((use_room_presence == 'room_presence_disabled') or (_cond_1_presence == true and _room_presence_last_changed >= presence_turn_off_duration * 60)) }}"
+  _cond_2_temperature: "{{ ((state_temperature_sensor >= (_computed_threshold_temperature | float(0))) and not heat_mode) or (heat_mode and (state_temperature_sensor <= (_computed_threshold_temperature | float(0)))) }}"
+  _cond_3_energy_generated: "{{ (use_energy_generated_sensor == 'energy_disabled') or (state_energy_generated_sensor >= energy_generated_threshold|float(0)) }}"
+  _cond_4_humidity: "{{ (use_humidity == 'humidity_disabled') or (state_humidity_sensor >= humidity|float(0)) }}"
+  _cond_5_window: "{{ (state_window_opened_sensor == 'off') }}"
+  _cond_6_temp_not_yet_reached: "{{ (state_temperature_sensor >= (_computed_target_temperature | float(0)) and not heat_mode) or (heat_mode and (state_temperature_sensor <= (_computed_target_temperature | float(0)))) }}"
+  _cond_7_timer: "{{ not (states.timer[timer_name.split('.')[0]] is defined and states(timer_name) == 'active') }}"
+  _cond_run_once_in_minute: "{{ (this.attributes.last_triggered is not defined or this.attributes.last_triggered == None) or now() - this.attributes.last_triggered >= timedelta(minutes=1) }}"
+trigger:
+  - platform: time_pattern
+    minutes: /15
+    id: time_pattern
+    enabled: true
+  #- platform: numeric_state
+  #  entity_id: !input temperature_sensor
+  #  above: !input threshold_temperature
+  #  for:
+  #    minutes: !input threshold_temperature_duration
+  #  id: start_above_temp
+  #- platform: numeric_state
+  #  entity_id: !input temperature_sensor
+  #  below: !input target_temperature
+  #  for:
+  #    minutes: !input target_temperature_duration
+  #  id: stop_temp_reached
+  - platform: template
+    value_template: "{{ ((states('temperature_sensor') | float(0)) > (states('_computed_threshold_temperature') | float(0)) and not states('heat_mode')) or (states('heat_mode') and (states('temperature_sensor') | float(0)) < (states('_computed_threshold_temperature') | float(0))) }}"
+    id: start_above_temp_2
+  - platform: template
+    value_template: "{{ ((states('temperature_sensor') | float(0)) < (states('_computed_target_temperature') | float(0)) and not states('heat_mode')) or (states('heat_mode') and (states('temperature_sensor') | float(0)) > (states('_computed_target_temperature') | float(0))) }}"
+    id: stop_temp_reached_2
+  - platform: template
+    value_template: "{{ ((states('temperature_sensor') | float(0) < (states('_computed_target_temperature') | float(0)) * 0.98) and not states('heat_mode')) or (states('heat_mode') and (states('temperature_sensor') | float(0) > (states('_computed_target_temperature') | float(0)) * 0.98)) }}"
+    id: stop_temp_too_low
+  - platform: state
+    entity_id: !input window_opened_sensor
+    to: "on"
+    for:
+      minutes: !input window_opened_duration
+    id: suspend_window_opened
+  - platform: state
+    entity_id: !input window_opened_sensor
+    to: "off"
+    for:
+      minutes: !input window_opened_duration
+    id: resume_window_closed
+  - platform: state
+    entity_id: !input home_presence_sensor
+    to: "off"
+    id: stop_away
+  # - platform: state
+  #   entity_id: !input home_presence_sensor
+  #   to: "on"
+  #   id: resume_home
+  #   enabled: false
+  - platform: state
+    entity_id: !input room_presence_sensor
+    to: "off"
+    for:
+      minutes: !input presence_turn_off_duration
+    id: suspend_nobody_in_room
+  - platform: state
+    entity_id: !input room_presence_sensor
+    to: "on"
+    for:
+      minutes: !input presence_turn_on_duration
+    id: resume_somebody_in_room
+  - platform: numeric_state
+    entity_id: !input humidity_sensor
+    below: !input humidity
+    id: stop_humidity_too_low
+  - platform: state
+    entity_id: !input climate_device
+    to: "off"
+    id: device_stopped
+  - platform: event
+    event_type: telegram_callback
+    id: telegram_event
+  - platform: state
+    entity_id: !input timer_helper
+    from: "active"
+    to: "idle"
+  #- platform: template
+  #  value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'idle' }}"
+  #  id: timer_elapsed
+condition:
+  - condition: or
+    alias: "Season options"
+    conditions:
+    - "{{ use_season == 'season_disabled' }}"
+    - condition: and
+      conditions:
+      - condition: template
+        value_template: "{{ (use_season == 'season_enabled') and (state_season_sensor in seasons_selected) }}"
+  - condition: state
+    alias: "Global condition"
+    entity_id: !input global_condition
+    state: "on"
+action:
+  - choose:
+      - alias: Turn on the climate device
+        conditions:
+          - condition: trigger
+            id:
+              #- start_above_temp
+              - start_above_temp_2
+              - resume_somebody_in_room
+              - resume_window_closed
+              - time_pattern
+          - condition: or
+            alias: "Time conditions"
+            conditions:
+            - "{{ use_time == 'time_disabled' }}"
+            - condition: and
+              conditions:
+              - condition: time
+                after: !input after_time
+                before: !input before_time
+                weekday: !input weekday_options
+              - "{{ use_time == 'time_enabled' }}"
+          - condition: or
+            alias: "Room presence condition"
+            conditions:
+            - "{{ use_room_presence == 'room_presence_disabled' }}"
+            - condition: and
+              conditions:
+              - condition: state
+                alias: "Room presence detected"
+                entity_id: !input room_presence_sensor
+                state: "on"
+                for:
+                  hours: 0
+                  minutes: "{{ presence_turn_on_duration | int(5) }}"
+                  seconds: 0
+              - "{{ use_room_presence == 'room_presence_enabled' }}"
+          - condition: state
+            alias: "Home presence sensor"
+            entity_id: !input home_presence_sensor
+            state: "on"
+          #- condition: template
+          #  alias: "Room presence sensor"
+          #  value_template: "{{ _cond_1_presence == true }}"
+          #- condition: template
+          #  alias: "Room presence sensor turn on duration"
+          #  value_template: "{{ _cond_1_presence_turn_on == true }}"
+          - condition: template
+            alias: "Temperature above threshold"
+            value_template: "{{ _cond_2_temperature == true }}"
+          - condition: template
+            alias: "Energy threshold"
+            value_template: "{{ _cond_3_energy_generated == true }}"
+          - condition: template
+            alias: "Windows closed"
+            value_template: "{{ _cond_5_window == true }}"
+          - condition: template
+            alias: "Climate Device was not turned off through Telegram buttons"
+            value_template: "{{ _cond_7_timer == true }}"
+          - condition: template
+            alias: "Run only once in a minute"
+            value_template: "{{ _cond_run_once_in_minute == true }}"
+          - condition: state
+            alias: "Device turned off"
+            entity_id: !input climate_device
+            state: "off"
+        sequence:
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ text_helper }}"
+            data:
+              value: >-
+                {{ 
+                  {
+                    "device": climate_device, 
+                    "trigger": trigger.id, 
+                    "prev": helper_json.prev if helper_json.prev is defined else "", 
+                    "ts" : as_timestamp(now()), 
+                    "started": helper_json.started if helper_json.started is defined else False 
+                  } | to_json
+                }}
+          - if:
+              - condition: template
+                alias: "Humidity satisfying"
+                value_template: "{{ _cond_4_humidity == false }}"
+            then:
+              - service: notify.{{ notify }}
+                data:
+                  title: ❄️ {{ device_name }} STOP
+                  message: |
+                    - Cannot turn on the climate device because Humidity in the room is too low: {{ state_humidity_sensor }} %
+                    - Current room temp: {{ state_temperature_sensor }}
+                    - Target temp: {{ _computed_target_temperature }}
+              - stop: Humidity too low
+          - if:
+              - condition: template
+                value_template: "{{ trigger.id.lower().startswith('resume_') and helper_json.started == false }}"
+            then:
+              - stop: Climate device was not started yet.
+            enabled: false
+          - if:
+              - condition: template
+                value_template: "{{ swing_mode | lower != 'unset' }}"
+            then:
+              - service: climate.set_swing_mode
+                metadata: {}
+                data:
+                  swing_mode: !input swing_mode
+                target:
+                  entity_id: !input climate_device
+                continue_on_error: true
+              - delay:
+                  seconds: 1
+          - if:
+              - condition: template
+                value_template: "{{ fan_mode | lower != 'unset' }}"
+            then:
+              - service: climate.set_fan_mode
+                metadata: {}
+                data:
+                  fan_mode: !input fan_mode
+                target:
+                  entity_id: !input climate_device
+                continue_on_error: true
+              - delay:
+                  seconds: 1
+          - if:
+              - condition: template
+                value_template: "{{ preset_mode | lower != 'unset' }}"
+            then:
+              - service: climate.set_preset_mode
+                metadata: {}
+                data:
+                  preset_mode: !input preset_mode
+                target:
+                  entity_id: !input climate_device
+                continue_on_error: true
+              - delay:
+                  seconds: 1
+          - service: climate.set_temperature
+            metadata: {}
+            data:
+              hvac_mode: !input hvac_mode
+              temperature: "{{ (_computed_target_temperature | float - 1) | round(1) }}"
+            target:
+              entity_id: !input climate_device
+            continue_on_error: true
+          - delay:
+              seconds: 1
+          - service: climate.turn_on
+            metadata: {}
+            data: {}
+            target:
+              entity_id: !input climate_device
+            enabled: false
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ text_helper }}"
+            data:
+              value: >-
+                {{ 
+                  {
+                    "device": climate_device, 
+                    "trigger": trigger.id, 
+                    "prev": helper_json.prev if helper_json.prev is defined else "", 
+                    "ts" : as_timestamp(now()), 
+                    "started": True
+                  } | to_json
+                }}
+          - if:
+            - condition: template
+              value_template: "{{ use_notify == 'notify_enabled' }}"
+            then:
+              - choose:
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          #- start_above_temp
+                          - start_above_temp_2
+                          - time_pattern
+                          - resume_somebody_in_room
+                    sequence:
+                      - if:
+                        - condition: template
+                          value_template: "{{ 'telegram' in notify | lower }}"
+                        then:
+                          - service: telegram_bot.send_message
+                            data:
+                              title: ❄️ {{ device_name }} ON
+                              message: |
+                                - Threshold temperature exceeded.
+                                - Current room temp: {{ state_temperature_sensor }}
+                                - Target temp: {{ _computed_target_temperature }}
+                              target: "{{ _telegram_chat_ids }}"
+                              timeout: 300
+                              verify_ssl: false
+                              parse_mode: html
+                              inline_keyboard:
+                                - - - "{{ 'Turn on' if not _cond_7_timer else 'Turn off...' }}"
+                                    - "{{ timer_turn_on if not _cond_7_timer else timer_turn_off }}"
+                        else:
+                          - service: notify.{{ notify }}
+                            data:
+                              title: ❄️ {{ device_name }} ON
+                              message: |
+                                - Threshold temperature exceeded.
+                                - Current room temp: {{ state_temperature_sensor }}
+                                - Target temp: {{ _computed_target_temperature }}
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - resume_window_closed
+                    sequence:
+                      - if:
+                        - condition: template
+                          value_template: "{{ 'telegram' in notify | lower }}"
+                        then:
+                          - service: telegram_bot.send_message
+                            data:
+                              title: ❄️ {{ device_name }} RESUME
+                              message: |
+                                - Window closed.
+                                - Current room temp: {{ state_temperature_sensor }}
+                                - Target temp: {{ _computed_target_temperature }}
+                              target: "{{ _telegram_chat_ids }}"
+                              timeout: 300
+                              verify_ssl: false
+                              parse_mode: html
+                              inline_keyboard:
+                                - - - "{{ 'Turn on' if not _cond_7_timer else 'Turn off...' }}"
+                                    - "{{ timer_turn_on if not _cond_7_timer else timer_turn_off }}"
+                        else:
+                          - service: notify.{{ notify }}
+                            data:
+                              title: ❄️ {{ device_name }} RESUME
+                              message: |
+                                - Window closed.
+                                - Current room temp: {{ state_temperature_sensor }}
+                                - Target temp: {{ _computed_target_temperature }}
+          - if:
+              - condition: template
+                value_template: "{{ use_awtrix == 'awtrix_enabled' }}"
+            then:
+              - repeat:
+                  for_each:  "{{ message_topics }}"
+                  sequence:
+                    - service: mqtt.publish
+                      data:
+                        qos: 0
+                        retain: false
+                        topic: "{{ repeat.item }}"
+                        payload: >-
+                          {% set text = device_name ~ " ON. Room temp: " ~ state_temperature_sensor ~ ". Target: " ~ _computed_target_temperature ~ "" %}
+                          {% set icon = "55645" %}
+                          {{ {
+                            "text" : text,
+                            "textCase" : 2,
+                            "color" : "#ffffff",
+                            "icon" : icon,
+                            "pushIcon" : 0,
+                            "duration" : 20,
+                            "textOffset" : 18
+                          } | to_json }}
+      - alias: Timer Elapsed
+        conditions:
+          - condition: trigger
+            id: 
+              - timer_elapsed
+        sequence:
+          - if:
+            - condition: template
+              value_template: "{{ 'telegram' in notify | lower }}"
+            then:
+              - service: telegram_bot.send_message
+                data:
+                  message: "❄️ Climate Device {{ device_name }} automation turned back on again."
+                  disable_notification: true
+                  target: "{{ _telegram_chat_ids }}"
+                  timeout: 300
+                  verify_ssl: false
+                  parse_mode: html
+                  inline_keyboard:
+                    - - - "{{ 'Turn on' if not _cond_7_timer else 'Turn off...' }}"
+                        - "{{ timer_turn_on if not _cond_7_timer else timer_turn_off }}"
+            else:
+              - service: notify.{{ notify }}
+                data:
+                  message: "❄️ Climate Device {{ device_name }} automation turned back on again."
+      - alias: Telegram Event
+        conditions:
+          - condition: trigger
+            id: 
+              - telegram_event
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_off }}"
+                sequence:
+                  - service: telegram_bot.send_message
+                    data:
+                      message: "For how long would you like to turn off the {{ device_name }} automation?"
+                      target: "{{ _telegram_chat_ids }}"
+                      timeout: 300
+                      verify_ssl: false
+                      parse_mode: html
+                      inline_keyboard:
+                        - - - 30 mins
+                            - "{{ timer_turn_off_30m }}"
+                          - - 2 hours
+                            - "{{ timer_turn_off_2h }}"
+                        - - - 4 hours
+                            - "{{ timer_turn_off_4h }}"
+                          - - Until midnight
+                            - "{{ timer_turn_off_midnight }}"
+                      disable_notification: true
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_off_30m }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'active' }}"
+                    then:
+                      - service: timer.cancel
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "❄️ Climate Device {{ device_name }} automation turned back on."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                    else:
+                      - service: timer.start
+                        metadata: {}
+                        data:
+                          duration: "00:30:00"
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: input_text.set_value
+                        target:
+                          entity_id: "{{ text_helper }}"
+                        data:
+                          value: >-
+                            {{ 
+                              {
+                                "device": climate_device, 
+                                "trigger": trigger.id, 
+                                "prev": helper_json.prev if helper_json.prev is defined else "", 
+                                "ts" : as_timestamp(now()), 
+                                "started": false
+                              } | to_json
+                            }}
+                      - service: climate.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: !input climate_device
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "Got it. Climate Device {{ device_name }} automation turned off for 30 minutes."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                          inline_keyboard:
+                            - - - Turn on
+                                - "{{ timer_turn_on }}"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_off_2h }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'active' }}"
+                    then:
+                      - service: timer.cancel
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "❄️ Climate Device {{ device_name }} automation turned back on."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                    else:
+                      - service: timer.start
+                        metadata: {}
+                        data:
+                          duration: "02:00:00"
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: input_text.set_value
+                        target:
+                          entity_id: "{{ text_helper }}"
+                        data:
+                          value: >-
+                            {{ 
+                              {
+                                "device": climate_device, 
+                                "trigger": trigger.id, 
+                                "prev": helper_json.prev if helper_json.prev is defined else "", 
+                                "ts" : as_timestamp(now()), 
+                                "started": false
+                              } | to_json
+                            }}
+                      - service: climate.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: !input climate_device
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "Got it. Climate Device {{ device_name }} automation turned off for 2 hours."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                          inline_keyboard:
+                            - - - Turn on
+                                - "{{ timer_turn_on }}"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_off_4h }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'active' }}"
+                    then:
+                      - service: timer.cancel
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "❄️ Climate Device {{ device_name }} automation turned back on."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                    else:
+                      - service: timer.start
+                        metadata: {}
+                        data:
+                          duration: "04:00:00"
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: input_text.set_value
+                        target:
+                          entity_id: "{{ text_helper }}"
+                        data:
+                          value: >-
+                            {{ 
+                              {
+                                "device": climate_device, 
+                                "trigger": trigger.id, 
+                                "prev": helper_json.prev if helper_json.prev is defined else "", 
+                                "ts" : as_timestamp(now()), 
+                                "started": false
+                              } | to_json
+                            }}
+                      - service: climate.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: !input climate_device
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "Got it. Climate Device {{ device_name }} automation turned off for 4 hours."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                          inline_keyboard:
+                            - - - Turn on
+                                - "{{ timer_turn_on }}"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_off_midnight }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'active' }}"
+                    then:
+                      - service: timer.cancel
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "❄️ Climate Device {{ device_name }} automation turned back on."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                    else:
+                      - service: timer.start
+                        metadata: {}
+                        data:
+                          duration: "{{ (today_at() + timedelta(days=1) - now()).total_seconds() | int(0) }}"
+                        target:
+                          entity_id: "{{ timer_name }}"
+                      - service: input_text.set_value
+                        target:
+                          entity_id: "{{ text_helper }}"
+                        data:
+                          value: >-
+                            {{ 
+                              {
+                                "device": climate_device, 
+                                "trigger": trigger.id, 
+                                "prev": helper_json.prev if helper_json.prev is defined else "", 
+                                "ts" : as_timestamp(now()), 
+                                "started": false
+                              } | to_json
+                            }}
+                      - service: climate.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: !input climate_device
+                      - service: telegram_bot.send_message
+                        data:
+                          message: "Got it. Climate Device {{ device_name }} automation turned off until midnight."
+                          disable_notification: true
+                          target: "{{ _telegram_chat_ids }}"
+                          timeout: 300
+                          verify_ssl: false
+                          parse_mode: html
+                          inline_keyboard:
+                            - - - Turn on
+                                - "{{ timer_turn_on }}"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.event.data.command == timer_turn_on }}"
+                sequence:
+                  - if:
+                      - condition: template
+                        value_template: "{{ states.timer[states('timer_name').split('.')[0]] is defined and states.timer[states('timer_name').split('.')[0]] == 'active' }}"
+                    then:
+                      - service: timer.cancel
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: "{{ timer_name }}"
+                  - service: telegram_bot.send_message
+                    data:
+                      message: "❄️ Climate Device {{ device_name }} automation turned back on."
+                      disable_notification: true
+                      target: "{{ _telegram_chat_ids }}"
+                      timeout: 300
+                      verify_ssl: false
+                      parse_mode: html
+      - alias: Turn off the climate device
+        conditions:
+          - condition: trigger
+            id:
+              #- stop_temp_reached
+              - stop_temp_reached_2
+              #- stop_temp_too_low
+              - stop_away
+              - stop_humidity_too_low
+              - suspend_window_opened
+              - suspend_nobody_in_room
+              - time_pattern
+          - condition: template
+            alias: "Device turned on"
+            value_template: "{{ device_state not in ('off', 'unknown') }}"
+          - condition: template
+            alias: "Run only once in a minute"
+            value_template: "{{ _cond_run_once_in_minute == true }}"
+          - condition: template
+            alias: "Checks if AirCo was started with this automation"
+            #value_template: "{{ (helper_json.started if helper_json.started) or trigger.id.lower() in ['stop_away', 'time_pattern'] }}"
+            value_template: "{{ helper_json.started }}"
+          - condition: template
+            alias: "Checks if some of the requirements are not met thus AirCo should be stopped"
+            value_template: "{{ (trigger.id != 'time_pattern') or (_cond_1_presence == false and _cond_1_presence_turn_off == true) or (_cond_6_temp_not_yet_reached == false or _cond_3_energy_generated == false or _cond_4_humidity == false or _cond_5_window == false) }}"
+        sequence:
+          - if:
+            - condition: template
+              value_template: "{{ use_notify == 'notify_enabled' }}"
+            then:
+              - choose:
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          #- stop_temp_reached
+                          - stop_temp_reached_2
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} OFF
+                          message: |
+                            - Target temp reached: {{ _computed_target_temperature }}
+                            - Current room temp: {{ state_temperature_sensor }}
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - time_pattern
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} STOP
+                          message: |
+                            {% if not _cond_1_presence_duration %}
+                            - Nobody in room {% elif not _cond_6_temp_not_yet_reached %}
+                            - Target temperature reached. {% elif not _cond_3_energy_generated %}
+                            - Not enough Energy generated today: {{ state_energy_generated_sensor }} kWh. {% elif not _cond_4_humidity %}
+                            - Insufficient humidity in the room: {{ state_humidity_sensor }} {% elif not _cond_5_window %}
+                            - Window is opened {% endif %}
+                            - Current room temp: {{ state_temperature_sensor }}
+                            - Target temp: {{ _computed_target_temperature }}
+                        enabled: true
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - suspend_window_opened
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} PAUSED
+                          message: |
+                            - Window opened.
+                            - Current room temp: {{ state_temperature_sensor }}
+                            - Target temp: {{ _computed_target_temperature }}
+                        enabled: true
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - suspend_nobody_in_room
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} PAUSED
+                          message: |
+                            - Nobody in room.
+                            - Current room temp: {{ state_temperature_sensor }}
+                            - Target temp: {{ _computed_target_temperature }}
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - stop_away
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} OFF
+                          message: |
+                            - Nobody in home.
+                            - Current room temp: {{ state_temperature_sensor }}
+                            - Target temp: {{ _computed_target_temperature }}
+                  - conditions:
+                      - condition: trigger
+                        id:
+                          - stop_humidity_too_low
+                    sequence:
+                      - service: notify.{{ notify }}
+                        data:
+                          title: ❄️ {{ device_name }} STOP
+                          message: |
+                            - Room humidity too low: {{ state_humidity_sensor }} %
+                            - Current room temp: {{ state_temperature_sensor }}
+          - if:
+              - condition: template
+                value_template: "{{ use_awtrix == 'awtrix_enabled' }}"
+            then:
+              - repeat:
+                  for_each: "{{ message_topics }}"
+                  sequence:
+                    - service: mqtt.publish
+                      data:
+                        qos: 0
+                        retain: false
+                        topic: "{{ repeat.item }}"
+                        payload: >-
+                          {% set text = device_name ~ " OFF. Room temp: " ~ state_temperature_sensor ~ "" %}
+                          {% set icon = "55645" %}
+                          {{ {
+                            "text" : text,
+                            "textCase" : 2,
+                            "color" : "#ffffff",
+                            "icon" : icon,
+                            "pushIcon" : 0,
+                            "duration" : 30,
+                            "textOffset" : 18
+                          } | to_json }}
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ text_helper }}"
+            data:
+              value: >-
+                {{ 
+                  {
+                    "device": climate_device, 
+                    "trigger": trigger.id, 
+                    "prev": helper_json.prev if helper_json.prev is defined else "", 
+                    "ts" : as_timestamp(now()), 
+                    "started": false
+                  } | to_json
+                }}
+          - service: climate.turn_off
+            metadata: {}
+            data: {}
+            target:
+              entity_id: !input climate_device
+      - alias: Climate device was turned OFF
+        conditions:
+          - condition: trigger
+            id:
+              - device_stopped
+          - condition: template
+            value_template: "{{ helper_json.started == true }}"
+        sequence:
+          - service: input_text.set_value
+            target:
+              entity_id: "{{ text_helper }}"
+            data:
+              value: >-
+                {{ 
+                  {
+                    "device": climate_device, 
+                    "trigger": trigger.id, 
+                    "prev": helper_json.prev if helper_json.prev is defined else "", 
+                    "ts" : as_timestamp(now()), 
+                    "started": false
+                  } | to_json
+                }}
+          - if:
+            - condition: template
+              value_template: "{{ (states.timer[states('timer_name').split('.')[0]] is not defined) or (states.timer[states('timer_name').split('.')[0]] != 'active') }}"
+            then:
+              - service: timer.start
+                metadata: {}
+                data:
+                  duration: "{{ manual_turn_off_duration * 60 }}"
+                target:
+                  entity_id: "{{ timer_name }}"
+              - if:
+                - condition: template
+                  value_template: "{{ 'telegram' in notify | lower }}"
+                then:
+                  - service: telegram_bot.send_message
+                    data:
+                      message: "❄️ Climate Device {{ device_name }} automation manually turned off for {{ manual_turn_off_duration }} minutes."
+                      disable_notification: true
+                      target: "{{ _telegram_chat_ids }}"
+                      timeout: 300
+                      verify_ssl: false
+                      parse_mode: html
+                      inline_keyboard:
+                        - - - Turn on
+                            - "{{ timer_turn_on }}"
+                else:
+                  - service: notify.{{ notify }}
+                    data:
+                      title: "❄️ Climate Device {{ device_name }} automation manually turned off for {{ manual_turn_off_duration }} minutes."
+                      message: |
+                        - Current room temp: {{ state_temperature_sensor }}
+                        - Target temp: {{ _computed_target_temperature }}
+mode: queued
+max_exceeded: silent
+trace:
+  stored_traces: 20
